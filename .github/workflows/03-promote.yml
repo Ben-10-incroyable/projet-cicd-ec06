@@ -1,0 +1,76 @@
+name: 03 - Promote (recette -> production)
+
+# Promotion MANUELLE d'un artefact deja construit, SANS rebuild.
+# On re-tag le MEME digest deja publie : l'image testee en recette
+# est exactement celle qui part en production.
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: "Tag source a promouvoir (ex: recette)"
+        required: true
+        default: "recette"
+      target_tag:
+        description: "Tag cible de production"
+        required: true
+        default: "production"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  valider-recette:
+    runs-on: ubuntu-latest
+    environment: recette
+    steps:
+      - name: Connexion a GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Recuperer et tester l'image de recette
+        run: |
+          IMG="ghcr.io/${{ github.repository }}:${{ github.event.inputs.source_tag }}"
+          echo "Validation de l'artefact : $IMG"
+          docker pull "$IMG"
+          docker run -d --name recette-test -p 8080:80 "$IMG"
+          sleep 5
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
+          echo "Code HTTP recette : $CODE"
+          test "$CODE" = "200" || { echo "Validation recette echouee"; exit 1; }
+          echo "Artefact valide en recette."
+          docker rm -f recette-test
+
+  promouvoir-production:
+    needs: valider-recette
+    runs-on: ubuntu-latest
+    environment: production-simulee
+    steps:
+      - name: Connexion a GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Re-tag SANS rebuild : on tire le digest source et on le repousse
+      # sous le tag de production. Meme image, meme digest.
+      - name: Promotion sans rebuild (re-tag du digest)
+        run: |
+          SRC="ghcr.io/${{ github.repository }}:${{ github.event.inputs.source_tag }}"
+          DST="ghcr.io/${{ github.repository }}:${{ github.event.inputs.target_tag }}"
+          echo "Recuperation de l'artefact source..."
+          docker pull "$SRC"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$SRC")
+          echo "Digest promu : $DIGEST"
+          echo "Re-tag $SRC -> $DST (aucun rebuild)"
+          docker tag "$SRC" "$DST"
+          docker push "$DST"
+          echo "### Promotion reussie :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+          echo "- Source : \`$SRC\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Cible : \`$DST\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Digest (identique) : \`$DIGEST\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Aucun rebuild** : meme artefact promu." >> $GITHUB_STEP_SUMMARY

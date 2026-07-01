@@ -1,0 +1,52 @@
+name: 01 - CI (build & test)
+
+# Se declenche a chaque push/PR sur main : controle automatique du projet.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Controle des fichiers requis
+        run: |
+          test -f site/index.html || { echo "index.html manquant"; exit 1; }
+          test -f site/version.json || { echo "version.json manquant"; exit 1; }
+          test -f Dockerfile || { echo "Dockerfile manquant"; exit 1; }
+          echo "Fichiers obligatoires presents."
+
+      - name: Validation JSON
+        run: |
+          python3 -c "import json; json.load(open('site/version.json'))"
+          echo "version.json est un JSON valide."
+
+      - name: Build de l'image Docker
+        run: docker build -t catal-log:ci .
+
+      - name: Test HTTP du conteneur
+        run: |
+          docker run -d --name test-web -p 8080:80 catal-log:ci
+          echo "Attente du demarrage de Nginx..."
+          for i in $(seq 1 10); do
+            if curl -fs http://localhost:8080/ > /dev/null; then
+              echo "Conteneur repond en HTTP 200."
+              break
+            fi
+            sleep 2
+          done
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
+          echo "Code HTTP recu : $CODE"
+          test "$CODE" = "200" || { echo "Test echoue"; docker logs test-web; exit 1; }
+          curl -s http://localhost:8080/ | grep -q "Catal-Log" || { echo "Contenu attendu absent"; exit 1; }
+          echo "Test technique reussi."
+
+      - name: Nettoyage
+        if: always()
+        run: docker rm -f test-web || true

@@ -1,0 +1,30 @@
+# Orchestration legere avec Docker Compose
+# - service "web"     : le site Nginx (scalable : docker compose up --scale web=2)
+# - service "gateway" : reverse proxy qui repartit vers les instances de web
+services:
+  web:
+    build: .
+    image: ghcr.io/ben-10-incroyable/projet-cicd-ec06:latest
+    expose:
+      - "80"
+    restart: unless-stopped
+    networks:
+      - app-net
+    # Pas de "ports" fixe ni de "container_name" sur web :
+    # cela permet le scaling (plusieurs instances en parallele)
+
+  gateway:
+    image: nginx:1.27-alpine
+    depends_on:
+      - web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    driver: bridge
