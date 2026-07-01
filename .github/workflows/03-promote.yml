@@ -31,9 +31,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Le nom du depot doit etre en minuscules pour GHCR / Docker.
+      - name: Nom du depot en minuscules
+        id: repo
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Recuperer et tester l'image de recette
         run: |
-          IMG="ghcr.io/${{ github.repository }}:${{ github.event.inputs.source_tag }}"
+          IMG="ghcr.io/${{ steps.repo.outputs.name }}:${{ github.event.inputs.source_tag }}"
           echo "Validation de l'artefact : $IMG"
           docker pull "$IMG"
           docker run -d --name recette-test -p 8080:80 "$IMG"
@@ -56,12 +61,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Nom du depot en minuscules
+        id: repo
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       # Re-tag SANS rebuild : on tire le digest source et on le repousse
       # sous le tag de production. Meme image, meme digest.
       - name: Promotion sans rebuild (re-tag du digest)
         run: |
-          SRC="ghcr.io/${{ github.repository }}:${{ github.event.inputs.source_tag }}"
-          DST="ghcr.io/${{ github.repository }}:${{ github.event.inputs.target_tag }}"
+          SRC="ghcr.io/${{ steps.repo.outputs.name }}:${{ github.event.inputs.source_tag }}"
+          DST="ghcr.io/${{ steps.repo.outputs.name }}:${{ github.event.inputs.target_tag }}"
           echo "Recuperation de l'artefact source..."
           docker pull "$SRC"
           DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$SRC")
