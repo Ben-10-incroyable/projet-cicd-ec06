@@ -1,5 +1,7 @@
 # Projet CI/CD — EC06 (Catal-Log)
 
+https://github.com/Ben-10-incroyable/projet-cicd-ec06/tree/main
+
 Chaîne CI/CD complète : build, test, publication et promotion d'une image Docker Nginx
 contenant un site statique, via **GitHub Actions** et **GitHub Container Registry (GHCR)**.
 
